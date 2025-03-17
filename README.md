@@ -194,25 +194,23 @@ Then call `migrateDatabase()` during app initialization or in an API route.
 
 ## Documentation
 
-For full documentation, visit [our documentation site](https://meridian-sql-docs.example.com).
-
 ### API Reference
 
-- [Core API](https://meridian-sql-docs.example.com/api/core)
-- [Operations](https://meridian-sql-docs.example.com/api/operations)
-- [Migrations](https://meridian-sql-docs.example.com/api/migrations)
+- [Core API](./docs/api/core.md)
+- [Operations](./docs/api/operations.md)
+- [Migrations](./docs/api/migrations.md)
 
 ### Guides
 
 - [Database Connection Pool](./docs/database-pool.md) - How to initialize and configure the database pool
 - [Automatic Migrations](./docs/migrations.md) - How to use automatic schema migrations
-- [Transactions](https://meridian-sql-docs.example.com/guides/transactions)
+- [Transactions](./docs/guides/transactions.md) - How to use transactions for data consistency
 
-## Examples
+### Examples
 
 - [Next.js Database Pool Initialization](./docs/examples/nextjs-pool-initialization.md) - How to use Meridian with Next.js
 - [Database Migrations with Pool](./docs/examples/migration-with-pool.md) - How to update migrations to use the pool
-- More examples in our [examples directory](./examples)
+- [Next.js Migration Example](./docs/examples/nextjs-migration.md) - Complete example of using Meridian with Next.js
 
 ## Contributing
 
