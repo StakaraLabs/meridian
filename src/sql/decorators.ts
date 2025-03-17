@@ -89,7 +89,10 @@ const vectorColumnsMetadata = new WeakMap<Function, Record<string, any>>();
  * Decorator for marking a class as a database table
  */
 export function Table(options: { name: string }) {
-  return function (constructor: Function) {
+  // For stage 3 decorators
+  function tableDecorator(value: any, context: ClassDecoratorContext) {
+    const constructor = value;
+    
     Reflect.defineMetadata('table:name', options.name, constructor);
 
     // Initialize empty metadata objects for this class
@@ -121,7 +124,66 @@ export function Table(options: { name: string }) {
       vectorColumnsMetadata.get(constructor),
       constructor
     );
-  };
+    
+    return value;
+  }
+  
+  // For experimental decorators
+  function legacyDecorator(constructor: Function) {
+    Reflect.defineMetadata('table:name', options.name, constructor);
+
+    // Initialize empty metadata objects for this class
+    if (!columnsMetadata.has(constructor)) {
+      columnsMetadata.set(constructor, {});
+    }
+
+    if (!foreignKeysMetadata.has(constructor)) {
+      foreignKeysMetadata.set(constructor, {});
+    }
+
+    if (!vectorColumnsMetadata.has(constructor)) {
+      vectorColumnsMetadata.set(constructor, {});
+    }
+
+    // Store the metadata on the constructor as well for compatibility
+    Reflect.defineMetadata(
+      'columns',
+      columnsMetadata.get(constructor),
+      constructor
+    );
+    Reflect.defineMetadata(
+      'foreign_keys',
+      foreignKeysMetadata.get(constructor),
+      constructor
+    );
+    Reflect.defineMetadata(
+      'vector_columns',
+      vectorColumnsMetadata.get(constructor),
+      constructor
+    );
+    
+    return constructor;
+  }
+  
+  // Return a decorator that can handle both formats
+  return function decoratorForwarder(target: any, context?: ClassDecoratorContext) {
+    if (context === undefined) {
+      // Experimental decorators
+      return legacyDecorator(target as Function);
+    } else {
+      // Stage 3 decorators
+      return tableDecorator(target, context);
+    }
+  } as any;
+}
+
+/**
+ * Convert a camelCase string to snake_case
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toSnakeCase(str: string): string {
+  return str.replace(/([A-Z])/g, '_$1').toLowerCase();
 }
 
 /**
@@ -137,9 +199,20 @@ export function Column(
     default?: () => string;
   } = {}
 ) {
-  return function (target: any, propertyKey: string) {
-    // Get the constructor of the class
-    const constructor = target.constructor;
+  return function(target: any, context: ClassFieldDecoratorContext | string) {
+    // Handle both stage 3 and experimental decorators
+    let propertyKey: string;
+    let constructor: Function;
+    
+    if (typeof context === 'string') {
+      // Experimental decorators
+      propertyKey = context;
+      constructor = target.constructor;
+    } else {
+      // Stage 3 decorators
+      propertyKey = context.name as string;
+      constructor = context.constructor as unknown as Function;
+    }
 
     // Get the columns metadata for this specific class
     let metadata = columnsMetadata.get(constructor);
@@ -165,7 +238,7 @@ export function Column(
     }
 
     metadata[propertyKey] = {
-      name: options.name || propertyKey,
+      name: options.name || toSnakeCase(propertyKey),
       primary: options.primary || false,
       nullable: options.nullable || false,
       unique: options.unique || false,
@@ -182,9 +255,20 @@ export function Column(
  * Decorator for marking a property as a foreign key
  */
 export function ForeignKey(tableName: string, columnName: string) {
-  return function (target: any, propertyKey: string) {
-    // Get the constructor of the class
-    const constructor = target.constructor;
+  return function(target: any, context: ClassFieldDecoratorContext | string) {
+    // Handle both stage 3 and experimental decorators
+    let propertyKey: string;
+    let constructor: Function;
+    
+    if (typeof context === 'string') {
+      // Experimental decorators
+      propertyKey = context;
+      constructor = target.constructor;
+    } else {
+      // Stage 3 decorators
+      propertyKey = context.name as string;
+      constructor = context.constructor as unknown as Function;
+    }
 
     // Get the foreign keys metadata for this specific class
     let metadata = foreignKeysMetadata.get(constructor);
@@ -201,23 +285,25 @@ export function ForeignKey(tableName: string, columnName: string) {
 }
 
 /**
- * Convert a camelCase string to snake_case
- * @param str The string to convert
- * @returns The converted string
- */
-function toSnakeCase(str: string): string {
-  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-}
-
-/**
  * Decorator for vector columns
  * @param dimensions The dimensions of the vector
  * @returns The decorator function
  */
 export function VectorColumn(dimensions: number) {
-  return function (target: any, propertyKey: string) {
-    // Get the constructor of the class
-    const constructor = target.constructor;
+  return function(target: any, context: ClassFieldDecoratorContext | string) {
+    // Handle both stage 3 and experimental decorators
+    let propertyKey: string;
+    let constructor: Function;
+    
+    if (typeof context === 'string') {
+      // Experimental decorators
+      propertyKey = context;
+      constructor = target.constructor;
+    } else {
+      // Stage 3 decorators
+      propertyKey = context.name as string;
+      constructor = context.constructor as unknown as Function;
+    }
 
     // Get existing columns metadata
     let columns = columnsMetadata.get(constructor);

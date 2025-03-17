@@ -1,5 +1,5 @@
 {
-  "name": "meridian",
+  "name": "meridian-sql",
   "version": "0.1.0",
   "description": "A lightweight, functional ORM-like library for PostgreSQL",
   "main": "dist/index.js",
@@ -16,11 +16,13 @@
     "dev": "rollup -c -w",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:cli": "node scripts/test-cli.js",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "format": "prettier --write 'src/**/*.{js,ts}'",
     "prepublishOnly": "npm run build",
     "docs": "typedoc --out docs/api src",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepare": "npm run build"
   },
   "keywords": [
     "postgresql",
@@ -35,12 +37,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/meridian.git"
+    "url": "https://github.com/yourusername/meridian-sql.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/meridian/issues"
+    "url": "https://github.com/yourusername/meridian-sql/issues"
   },
-  "homepage": "https://github.com/yourusername/meridian#readme",
+  "homepage": "https://github.com/yourusername/meridian-sql#readme",
   "dependencies": {
     "dotenv": "^16.0.3",
     "pg": "^8.11.0",
@@ -75,7 +77,15 @@
     "ts-jest": "^29.1.0",
     "tslib": "^2.5.3",
     "typedoc": "^0.24.8",
-    "typescript": "^5.1.3"
+    "typescript": "^5.1.3",
+    "ts-node": "^10.9.1"
   },
-  "type": "module"
+  "type": "module",
+  "peerDependencies": {
+    "pg": "^8.0.0",
+    "reflect-metadata": "^0.1.13"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
 } 

@@ -7,6 +7,8 @@ import { Pool } from 'pg';
 export declare function ensureVectorExtension(pool: Pool): Promise<void>;
 /**
  * Run the migration
+ * @param pool The database connection pool to use
  * @param dryRun If true, only show the SQL that would be executed without actually running it
+ * @param entityClasses Optional array of entity classes to use for migration (if not provided, will load from db/entities)
  */
-export declare function runMigration(dryRun?: boolean): Promise<void>;
+export declare function runMigration(pool?: Pool, dryRun?: boolean, entityClasses?: any[]): Promise<string>;

@@ -5,7 +5,7 @@ import { Pool, PoolClient } from 'pg';
  */
 declare function Table(options: {
     name: string;
-}): (constructor: Function) => void;
+}): any;
 /**
  * Decorator for marking a property as a database column
  */
@@ -16,17 +16,17 @@ declare function Column(options?: {
     unique?: boolean;
     type?: string;
     default?: () => string;
-}): (target: any, propertyKey: string) => void;
+}): (target: any, context: ClassFieldDecoratorContext | string) => void;
 /**
  * Decorator for marking a property as a foreign key
  */
-declare function ForeignKey(tableName: string, columnName: string): (target: any, propertyKey: string) => void;
+declare function ForeignKey(tableName: string, columnName: string): (target: any, context: ClassFieldDecoratorContext | string) => void;
 /**
  * Decorator for vector columns
  * @param dimensions The dimensions of the vector
  * @returns The decorator function
  */
-declare function VectorColumn(dimensions: number): (target: any, propertyKey: string) => void;
+declare function VectorColumn(dimensions: number): (target: any, context: ClassFieldDecoratorContext | string) => void;
 
 interface EntityBase {
     id: string;
@@ -48,7 +48,7 @@ interface VectorEmbedding {
     entryId: string;
     embedding: number[];
 }
-declare const pool: Pool;
+declare let pool: Pool;
 
 /**
  * Find a single entity by criteria
@@ -188,9 +188,11 @@ declare function withSavepoint<T>(name: string, callback: () => Promise<T>, clie
 
 /**
  * Run the migration
+ * @param pool The database connection pool to use
  * @param dryRun If true, only show the SQL that would be executed without actually running it
+ * @param entityClasses Optional array of entity classes to use for migration (if not provided, will load from db/entities)
  */
-declare function runMigration(dryRun?: boolean): Promise<void>;
+declare function runMigration(pool?: Pool, dryRun?: boolean, entityClasses?: any[]): Promise<string>;
 
 interface ColumnInfo {
     column_name: string;

@@ -27,8 +27,12 @@ export async function findBy<T extends EntityBase>(
       // Get the column metadata if available
       const meta = columns[key];
       
-      // Use the column name from metadata or the key itself
-      const columnName = meta?.name || key;
+      if (!meta) {
+        throw new Error(`Property ${key} is not decorated with @Column`);
+      }
+      
+      // Use the column name from metadata
+      const columnName = meta.name;
       
       conditions.push(`${columnName} = $${paramIndex}`);
       values.push(value);
@@ -86,8 +90,12 @@ export async function listAll<T extends EntityBase>(
       // Get the column metadata if available
       const meta = columns[key];
       
-      // Use the column name from metadata or the key itself
-      const columnName = meta?.name || key;
+      if (!meta) {
+        throw new Error(`Property ${key} is not decorated with @Column`);
+      }
+      
+      // Use the column name from metadata
+      const columnName = meta.name;
       
       conditions.push(`${columnName} = $${paramIndex}`);
       values.push(value);
@@ -168,8 +176,8 @@ export async function save<T extends EntityBase>(
       const value = entity[key as keyof T];
       
       if (value !== undefined) {
-        // Use the column name from metadata or the key itself
-        const columnName = meta.name || key;
+        // Use the column name from metadata
+        const columnName = meta.name;
         
         columnNames.push(columnName);
         placeholders.push(`$${paramIndex}`);
@@ -212,8 +220,8 @@ export async function save<T extends EntityBase>(
           key !== 'createdAt' && 
           key !== 'updatedAt' && 
           key !== 'deletedAt') {
-        // Use the column name from metadata or the key itself
-        const columnName = meta.name || key;
+        // Use the column name from metadata
+        const columnName = meta.name;
         
         setExpressions.push(`${columnName} = $${paramIndex}`);
         
@@ -276,8 +284,12 @@ export async function deleteBy<T extends EntityBase>(
       // Get the column metadata if available
       const meta = columns[key];
       
-      // Use the column name from metadata or the key itself
-      const columnName = meta?.name || key;
+      if (!meta) {
+        throw new Error(`Property ${key} is not decorated with @Column`);
+      }
+      
+      // Use the column name from metadata
+      const columnName = meta.name;
       
       conditions.push(`${columnName} = $${paramIndex}`);
       values.push(value);
@@ -313,8 +325,8 @@ export function mapRowToEntity<T extends EntityBase>(
   const columns = getAllColumnsFromHierarchy(entityClass);
   
   for (const [key, meta] of Object.entries(columns)) {
-    // Use the column name from metadata or the key itself
-    const columnName = meta.name || key;
+    // Use the column name from metadata
+    const columnName = meta.name;
     
     // Convert snake_case column names to camelCase property names
     const snakeCaseKey = columnName.toLowerCase();
@@ -345,7 +357,7 @@ function getAllColumnsFromHierarchy<T>(
     
     if (parentColumns) {
       // Merge parent columns with child columns (child overrides parent)
-      Object.assign({}, parentColumns, columns);
+      Object.assign(columns, parentColumns);
     }
     
     proto = Object.getPrototypeOf(proto);

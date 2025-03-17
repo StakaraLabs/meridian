@@ -1,235 +1,389 @@
 # Automatic Database Migrations
 
-Meridian provides a powerful system for automatically generating and applying database migrations based on your entity definitions. This approach eliminates the need to write SQL migration scripts manually, making schema changes simpler and less error-prone.
+Meridian provides an automatic migration system that can generate and execute SQL migrations based on your entity definitions. This document explains how to use this system effectively.
 
 ## How It Works
 
 The migration system works by:
 
-1. Loading all entity class definitions from your codebase
-2. Comparing them with the current database schema
-3. Generating the necessary SQL to transform the database to match your entity definitions
-4. Applying these changes in a single transaction
+1. Loading your entity class definitions
+2. Querying the current database schema
+3. Comparing the two to generate the necessary SQL statements
+4. Executing those statements to update the database schema
 
-## Setting Up Migrations
+This approach eliminates the need for manual migration files and ensures your database schema always matches your entity definitions.
 
-### 1. Define Your Entities
+## Defining Entities
 
-First, define your entity classes with proper decorators:
+Entities are defined using TypeScript classes with decorators:
 
 ```typescript
-import { Entity, Column, PrimaryColumn } from 'meridian/decorators';
+import 'reflect-metadata';
+import { Table, Column, ForeignKey } from 'meridian/sql/decorators';
+import { BaseEntity } from 'meridian/sql/base-entity';
 
-@Entity('users')
-export class User {
-  @PrimaryColumn({ type: 'uuid' })
-  id: string;
+@Table({ name: 'users' })
+export class User extends BaseEntity {
+  @Column({ unique: true })
+  username: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  name: string;
+  @Column({ nullable: true, unique: true })
+  email?: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
-  email: string;
+  @Column({ name: 'display_name', nullable: true })
+  displayName?: string;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  createdAt: Date;
-
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  updatedAt: Date;
-
-  @Column({ type: 'timestamp', nullable: true })
-  deletedAt?: Date;
+  constructor(data?: Partial<User>) {
+    super(data);
+    this.username = data?.username || '';
+    this.email = data?.email;
+    this.displayName = data?.displayName;
+  }
 }
 ```
 
-### 2. Running Migrations
+### Entity Decorators
 
-You can run migrations programmatically or via the command line.
+- `@Table({ name: string })`: Marks a class as a database table
+- `@Column(options)`: Marks a property as a database column
+  - `name`: Custom column name (defaults to snake_case of property name)
+  - `primary`: Whether this is a primary key (default: false)
+  - `nullable`: Whether this column can be null (default: false)
+  - `unique`: Whether this column has a unique constraint (default: false)
+  - `type`: SQL type (inferred from TypeScript type if not specified)
+  - `default`: SQL default value function
+- `@ForeignKey(tableName, columnName)`: Defines a foreign key relationship
+- `@VectorColumn(dimensions)`: Defines a vector column for AI embeddings
 
-#### Command Line
+### Base Entities
 
-```bash
-# Run migration
-npx meridian-migrate
-
-# Dry run (show SQL without applying changes)
-npx meridian-migrate --dry-run
-```
-
-#### Programmatically
+Meridian provides base entity classes you can extend:
 
 ```typescript
-import { initializePool, getPool } from 'meridian';
-import { runMigration } from 'meridian/migrations';
+// BaseEntity provides common fields
+export abstract class BaseEntity {
+  @Column({ primary: true, default: () => "gen_random_uuid()" })
+  id: string;
 
-// Initialize the database pool
-initializePool();
+  @Column({ name: "created_at", default: () => "NOW()" })
+  createdAt: Date;
 
-// Run migration
-await runMigration();
+  @Column({ name: "updated_at", default: () => "NOW()" })
+  updatedAt: Date;
 
-// Or with dry run option
-await runMigration({ dryRun: true });
+  @Column({ name: "deleted_at", nullable: true })
+  deletedAt?: Date;
+}
+
+// UserOwnedEntity adds a userId field with foreign key
+export abstract class UserOwnedEntity extends BaseEntity {
+  @Column({ name: "user_id" })
+  @ForeignKey("users", "id")
+  userId: string;
+}
 ```
 
-## Migration Configuration
+## Entity Directory Structure
 
-You can configure the migration system by creating a `meridian.config.js` file in your project root:
+By default, Meridian looks for entity classes in the `db/entities` directory. Create this structure:
 
-```javascript
-module.exports = {
-  // Directory where entity classes are located
-  entitiesDir: 'src/entities',
-  
-  // Database connection options (if not using the pool)
-  database: {
-    connectionString: process.env.DATABASE_URL,
-  },
-  
-  // Migration options
-  migrations: {
-    // Whether to automatically create tables that don't exist
-    createTables: true,
-    
-    // Whether to automatically add columns that don't exist
-    addColumns: true,
-    
-    // Whether to automatically alter columns that have changed
-    alterColumns: true,
-    
-    // Whether to automatically create indices
-    createIndices: true,
-    
-    // Whether to drop columns that no longer exist in the entity
-    // CAUTION: This can cause data loss
-    dropColumns: false,
-    
-    // Whether to drop tables that no longer exist in any entity
-    // CAUTION: This can cause data loss
-    dropTables: false,
+```
+project/
+├── db/
+│   └── entities/
+│       ├── user.ts
+│       ├── post.ts
+│       └── ...
+```
+
+You can export all your entities from an index.ts file:
+
+```typescript
+// db/entities/index.ts
+export * from './user';
+export * from './post';
+export * from './comment';
+// ...
+```
+
+## Running Migrations
+
+### Command Line
+
+You can run migrations directly from the command line:
+
+```bash
+# Using npx
+npx meridian-migrate
+
+# Or with a script in package.json
+# "scripts": {
+#   "db:migrate": "meridian-migrate"
+# }
+npm run db:migrate
+```
+
+### Programmatically
+
+You can also run migrations programmatically:
+
+```typescript
+import { Pool } from 'pg';
+import { runMigration } from 'meridian/sql/run-migration';
+import * as entities from './db/entities';
+
+async function migrate() {
+  // Create a database pool
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL
+  });
+
+  // Get all entity classes
+  const entityClasses = Object.values(entities).filter(
+    entity => typeof entity === 'function'
+  );
+
+  // Run migration
+  await runMigration(pool, false, entityClasses);
+}
+
+migrate().catch(console.error);
+```
+
+### Dry Run Mode
+
+You can run migrations in "dry run" mode to see the SQL that would be executed without actually changing the database:
+
+```typescript
+// Get the SQL without executing it
+const migrationSql = await runMigration(pool, true, entityClasses);
+console.log(migrationSql);
+```
+
+## Integration with Next.js
+
+### Setup
+
+Create a database utility file:
+
+```typescript
+// lib/db.ts
+import { Pool } from 'pg';
+import { runMigration } from 'meridian/sql/run-migration';
+import * as entities from '../db/entities';
+
+let pool: Pool;
+
+export function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL
+    });
   }
-};
+  return pool;
+}
+
+export async function migrateDatabase() {
+  const pool = getPool();
+  const entityClasses = Object.values(entities).filter(
+    entity => typeof entity === 'function'
+  );
+  await runMigration(pool, false, entityClasses);
+}
+```
+
+### Running Migrations on App Startup
+
+For Next.js 13+ App Router:
+
+```typescript
+// app/api/migrate/route.ts
+import { NextResponse } from 'next/server';
+import { migrateDatabase } from '@/lib/db';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export async function GET() {
+  // Optional: Add authentication to prevent unauthorized migrations
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    await migrateDatabase();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Migration failed:', error);
+    return NextResponse.json(
+      { error: 'Migration failed', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+```
+
+For Next.js Pages Router:
+
+```typescript
+// pages/api/migrate.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { migrateDatabase } from '@/lib/db';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // Optional: Add authentication to prevent unauthorized migrations
+  const session = await getServerSession(req, res, authOptions);
+  if (!session?.user?.isAdmin) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    await migrateDatabase();
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Migration failed:', error);
+    return res.status(500).json({ 
+      error: 'Migration failed', 
+      details: error.message 
+    });
+  }
+}
+```
+
+### Running Migrations During Development
+
+You can create a custom server script that runs migrations before starting the development server:
+
+```typescript
+// scripts/dev.ts
+import { spawn } from 'child_process';
+import { migrateDatabase } from '../lib/db';
+
+async function dev() {
+  try {
+    // Run migrations
+    console.log('Running database migrations...');
+    await migrateDatabase();
+    console.log('Migrations completed successfully');
+
+    // Start Next.js dev server
+    console.log('Starting Next.js development server...');
+    const nextDev = spawn('next', ['dev'], { stdio: 'inherit' });
+
+    // Handle process termination
+    process.on('SIGINT', () => {
+      nextDev.kill('SIGINT');
+    });
+
+    nextDev.on('close', (code) => {
+      process.exit(code);
+    });
+  } catch (error) {
+    console.error('Error during startup:', error);
+    process.exit(1);
+  }
+}
+
+dev();
+```
+
+Add a script to your package.json:
+
+```json
+"scripts": {
+  "dev:with-migrate": "ts-node scripts/dev.ts"
+}
 ```
 
 ## Advanced Usage
 
-### Vector Support
+### Custom Entity Loading
 
-Meridian supports PostgreSQL vector extensions for AI and machine learning applications:
+You can customize how entities are loaded by providing them directly to the `runMigration` function:
 
 ```typescript
-import { Entity, Column, PrimaryColumn, VectorColumn } from 'meridian/decorators';
+import { User } from './entities/user';
+import { Post } from './entities/post';
+import { Comment } from './entities/comment';
 
-@Entity('documents')
-export class Document {
-  @PrimaryColumn({ type: 'uuid' })
-  id: string;
+// Run migration with specific entity classes
+await runMigration(pool, false, [User, Post, Comment]);
+```
 
-  @Column({ type: 'text' })
-  content: string;
+### Transaction Control
 
-  @VectorColumn({ dimensions: 1536 })
+The migration system uses transactions to ensure all schema changes are applied atomically. If any part of the migration fails, all changes are rolled back.
+
+### Vector Support
+
+Meridian supports PostgreSQL vector columns for AI embeddings:
+
+```typescript
+import { BaseEntity } from './base-entity';
+import { Table, Column, ForeignKey, VectorColumn } from 'meridian/sql/decorators';
+
+@Table({ name: 'post_embeddings' })
+export class PostEmbedding extends BaseEntity {
+  @Column({ name: 'post_id' })
+  @ForeignKey('posts', 'id')
+  postId: string;
+
+  @VectorColumn(1536) // OpenAI embedding dimensions
   embedding: number[];
 }
 ```
 
-The migration system will automatically install the vector extension if needed.
-
-### Transaction Safety
-
-All migrations run within a transaction, ensuring that your database remains in a consistent state. If any part of the migration fails, all changes are rolled back.
-
-### Custom SQL
-
-You can include custom SQL in your migrations:
-
-```typescript
-import { runMigration, addCustomSQL } from 'meridian/migrations';
-
-// Add custom SQL to be executed during migration
-addCustomSQL('CREATE INDEX IF NOT EXISTS idx_users_name ON users (name);');
-
-// Run migration with custom SQL included
-await runMigration();
-```
-
-## Implementation Details
-
-The migration system follows these steps:
-
-1. **Load Entity Classes**: Dynamically loads all entity classes from your codebase
-2. **Extract Schema Information**: Extracts table and column definitions from entity decorators
-3. **Get Current Schema**: Queries the database to get the current schema
-4. **Generate Migration SQL**: Compares the desired schema with the current schema and generates SQL
-5. **Execute Migration**: Runs the generated SQL within a transaction
-
-## Best Practices
-
-1. **Always Run in Development First**: Test migrations in development before applying to production
-2. **Use Dry Run**: Use the `--dry-run` option to preview changes before applying them
-3. **Back Up Your Database**: Always back up your database before running migrations in production
-4. **Be Cautious with Drop Options**: Enabling `dropColumns` or `dropTables` can cause data loss
-5. **Version Control**: Keep your entity definitions in version control to track schema changes
+The migration system will automatically install the PostgreSQL vector extension if needed.
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Entity Not Found**: Ensure your entity classes are properly exported and located in the configured directory
-2. **Migration Fails**: Check the error message for details on why the migration failed
-3. **Vector Extension**: If using vector columns, ensure your PostgreSQL server supports the vector extension
+1. **Missing reflect-metadata**: Make sure to import 'reflect-metadata' at the top of your entity files and at the entry point of your application.
+
+2. **Decorator Compilation Errors**: Ensure TypeScript is configured to use decorators:
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+3. **Entity Loading Failures**: If entities aren't being loaded automatically, try providing them explicitly to the `runMigration` function.
+
+4. **Database Connection Issues**: Verify your DATABASE_URL environment variable is correctly set and accessible.
 
 ### Debugging
 
-Enable detailed logging to debug migration issues:
+To see more detailed logs during migration:
 
 ```typescript
-import { runMigration } from 'meridian/migrations';
+// Set environment variable
+process.env.DEBUG_MIGRATIONS = 'true';
 
-await runMigration({ 
-  dryRun: true,
-  verbose: true 
-});
+// Then run migrations
+await runMigration(pool, false, entityClasses);
 ```
 
-## Example: Complete Migration Workflow
+## Best Practices
 
-Here's a complete example of how to set up and run migrations in a Next.js application:
+1. **Version Control**: Keep your entity definitions in version control to track schema changes over time.
 
-```typescript
-// src/lib/db.ts
-import { initializePool, getPool } from 'meridian';
-import { runMigration } from 'meridian/migrations';
+2. **Test Migrations**: Always test migrations in a development environment before applying them to production.
 
-// Initialize the pool
-export function initializeDatabase() {
-  // Initialize the connection pool
-  initializePool({
-    connectionString: process.env.DATABASE_URL,
-    max: process.env.NODE_ENV === 'production' ? 20 : 5
-  });
-  
-  // Run migrations if AUTO_MIGRATE is enabled
-  if (process.env.AUTO_MIGRATE === 'true') {
-    runMigration()
-      .then(() => console.log('Database migration completed'))
-      .catch(err => console.error('Database migration failed:', err));
-  }
-  
-  return getPool();
-}
+3. **Backup**: Back up your database before running migrations in production.
 
-export { getPool };
-```
+4. **Gradual Changes**: Make incremental changes to your schema rather than large, sweeping changes.
 
-Then in your application startup:
+5. **Soft Deletes**: Use the `deletedAt` field for soft deletes rather than actually removing data.
 
-```typescript
-// app/api/_init.ts
-import { initializeDatabase } from '@/lib/db';
-
-// Initialize database and run migrations if configured
-initializeDatabase();
-
-export const runtime = 'nodejs';
-``` 
+6. **Nullable Fields**: When adding new fields to existing tables, make them nullable or provide a default value. 

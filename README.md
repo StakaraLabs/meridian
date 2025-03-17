@@ -1,13 +1,13 @@
-# Meridian
+# Meridian SQL
 
 A lightweight, functional ORM-like library for PostgreSQL. Simple, type-safe database operations without the complexity of full-featured query builders.
 
 ## Installation
 
 ```bash
-npm install meridian
+npm install meridian-sql
 # or
-yarn add meridian
+yarn add meridian-sql
 ```
 
 ## Features
@@ -22,8 +22,11 @@ yarn add meridian
 ## Quick Start
 
 ```typescript
-import { initializePool, getPool } from 'meridian';
-import { findAll, insert, update, remove } from 'meridian/operations';
+import 'reflect-metadata';
+import { initializePool, getPool } from 'meridian-sql';
+import { findById, findAll, save, remove } from 'meridian-sql/operations';
+import { Table, Column } from 'meridian-sql/sql/decorators';
+import { BaseEntity } from 'meridian-sql/sql/base-entity';
 
 // Initialize the database pool
 initializePool({
@@ -33,54 +36,177 @@ initializePool({
 // Get the pool instance
 const pool = getPool();
 
-// Define a type for your data
-interface User {
-  id?: number;
-  name: string;
+// Define an entity class
+@Table({ name: 'users' })
+class User extends BaseEntity {
+  @Column({ unique: true })
+  username: string;
+
+  @Column({ unique: true })
   email: string;
-  created_at?: Date;
+
+  @Column({ name: 'display_name', nullable: true })
+  displayName?: string;
+
+  constructor(data?: Partial<User>) {
+    super(data);
+    this.username = data?.username || '';
+    this.email = data?.email || '';
+    this.displayName = data?.displayName;
+  }
 }
 
-// Fetch all users
-const users = await findAll<User>(pool, 'users');
+// Run automatic migrations
+import { runMigration } from 'meridian-sql/sql/run-migration';
+await runMigration(pool, false, [User]);
 
-// Insert a new user
-const newUser = await insert<User>(pool, 'users', {
-  name: 'John Doe',
-  email: 'john@example.com'
+// Create and save a new user
+const newUser = new User({
+  username: 'johndoe',
+  email: 'john@example.com',
+  displayName: 'John Doe'
 });
+await save(pool, newUser);
+
+// Find a user by ID
+const user = await findById(pool, User, newUser.id);
+
+// Find all users
+const users = await findAll(pool, User);
 
 // Update a user
-const updatedUser = await update<User>(pool, 'users', 
-  { email: 'new-email@example.com' },
-  { id: newUser.id }
-);
+if (user) {
+  user.email = 'new-email@example.com';
+  await save(pool, user);
+}
 
 // Delete a user
-await remove(pool, 'users', { id: newUser.id });
+if (user) {
+  await remove(pool, user);
+}
 
-// Execute a raw query
-const result = await pool.query(`
-  SELECT * FROM users 
-  WHERE created_at > $1
-`, [new Date('2023-01-01')]);
 ```
+
+## Entity Definitions
+
+Meridian uses TypeScript decorators to define database entities. Here's how to define an entity class:
+
+```typescript
+import 'reflect-metadata';
+import { Table, Column, ForeignKey } from 'meridian-sql/sql/decorators';
+import { BaseEntity } from 'meridian-sql/sql/base-entity';
+
+@Table({ name: 'users' })
+export class User extends BaseEntity {
+  @Column({ unique: true })
+  username: string;
+
+  @Column({ nullable: true, unique: true })
+  email?: string;
+
+  @Column({ name: 'email_verified', nullable: true })
+  emailVerified?: Date;
+
+  @Column({ nullable: true })
+  password?: string;
+
+  constructor(data?: Partial<User>) {
+    super(data);
+    this.username = data?.username || '';
+    this.email = data?.email;
+    this.emailVerified = data?.emailVerified;
+    this.password = data?.password;
+  }
+}
+```
+
+### Entity Decorators
+
+- `@Table({ name: string })`: Marks a class as a database table
+- `@Column(options)`: Marks a property as a database column
+  - `name`: Custom column name (defaults to snake_case of property name)
+  - `primary`: Whether this is a primary key (default: false)
+  - `nullable`: Whether this column can be null (default: false)
+  - `unique`: Whether this column has a unique constraint (default: false)
+  - `type`: SQL type (inferred from TypeScript type if not specified)
+  - `default`: SQL default value function
+- `@ForeignKey(tableName, columnName)`: Defines a foreign key relationship
+- `@VectorColumn(dimensions)`: Defines a vector column for AI embeddings
+
+### Base Entities
+
+Meridian provides base entity classes you can extend:
+
+- `BaseEntity`: Provides `id`, `createdAt`, `updatedAt`, and `deletedAt` fields
+- `UserOwnedEntity`: Extends `BaseEntity` and adds a `userId` field with foreign key
+
+## Automatic Migrations
+
+Meridian can automatically generate and run migrations based on your entity definitions:
+
+```typescript
+import { Pool } from 'pg';
+import { runMigration } from 'meridian-sql/sql/run-migration';
+import { User, Post, Comment } from './entities';
+
+// Create a database pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+// Run migration with specific entity classes
+await runMigration(pool, false, [User, Post, Comment]);
+
+// Or run in dry-run mode to see the SQL without executing it
+const migrationSql = await runMigration(pool, true, [User, Post, Comment]);
+console.log(migrationSql);
+```
+
+### Running Migrations in Next.js
+
+```typescript
+// lib/db.ts
+import { Pool } from 'pg';
+import { runMigration } from 'meridian-sql/sql/run-migration';
+import * as entities from '../db/entities';
+
+let pool: Pool;
+
+export function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL
+    });
+  }
+  return pool;
+}
+
+export async function migrateDatabase() {
+  const pool = getPool();
+  const entityClasses = Object.values(entities).filter(
+    entity => typeof entity === 'function'
+  );
+  await runMigration(pool, false, entityClasses);
+}
+```
+
+Then call `migrateDatabase()` during app initialization or in an API route.
 
 ## Documentation
 
-For full documentation, visit [our documentation site](https://meridian-docs.example.com).
+For full documentation, visit [our documentation site](https://meridian-sql-docs.example.com).
 
 ### API Reference
 
-- [Core API](https://meridian-docs.example.com/api/core)
-- [Operations](https://meridian-docs.example.com/api/operations)
-- [Migrations](https://meridian-docs.example.com/api/migrations)
+- [Core API](https://meridian-sql-docs.example.com/api/core)
+- [Operations](https://meridian-sql-docs.example.com/api/operations)
+- [Migrations](https://meridian-sql-docs.example.com/api/migrations)
 
 ### Guides
 
 - [Database Connection Pool](./docs/database-pool.md) - How to initialize and configure the database pool
 - [Automatic Migrations](./docs/migrations.md) - How to use automatic schema migrations
-- [Transactions](https://meridian-docs.example.com/guides/transactions)
+- [Transactions](https://meridian-sql-docs.example.com/guides/transactions)
 
 ## Examples
 
@@ -94,4 +220,4 @@ We welcome contributions! Please see our [Contributing Guide](./docs/contributin
 
 ## License
 
-MIT © [Your Name] 
+MIT © Stakara (Pty) Ltd.

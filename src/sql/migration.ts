@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Pool, PoolClient } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import { toSnakeCase } from './decorators';
 
 // Types for metadata
 interface TableMetadata {
@@ -504,8 +505,13 @@ export function generateTableSQL(
   if (includeForeignKeys) {
     for (const [propertyKey, fkMetadata] of Object.entries(foreignKeys)) {
       const metadata = fkMetadata as ForeignKeyMetadata;
-      const columnName =
-        (columns[propertyKey] as ColumnMetadata)?.name || propertyKey;
+      const columnMeta = columns[propertyKey] as ColumnMetadata;
+      
+      if (!columnMeta) {
+        throw new Error(`Property ${propertyKey} is not decorated with @Column`);
+      }
+      
+      const columnName = columnMeta.name;
       const fkDef = `  CONSTRAINT ${quoteIdentifier(
         `fk_${tableName}_${columnName}`
       )} FOREIGN KEY (${quoteIdentifier(
@@ -523,8 +529,13 @@ export function generateTableSQL(
 
   // Add vector columns if any
   for (const [propertyKey, dimensions] of Object.entries(vectorColumns)) {
-    const columnName =
-      (columns[propertyKey] as ColumnMetadata)?.name || propertyKey;
+    const columnMeta = columns[propertyKey] as ColumnMetadata;
+    
+    if (!columnMeta) {
+      throw new Error(`Property ${propertyKey} is not decorated with @Column`);
+    }
+    
+    const columnName = columnMeta.name;
     sql += `ALTER TABLE ${quoteIdentifier(
       tableName
     )} ADD COLUMN ${quoteIdentifier(columnName)} vector(${dimensions});\n`;
@@ -648,8 +659,13 @@ export function generateAlterTableSQL(
   // Check for missing foreign keys
   for (const [propertyKey, fkMetadata] of Object.entries(foreignKeys)) {
     const metadata = fkMetadata as ForeignKeyMetadata;
-    const columnName =
-      (columns[propertyKey] as ColumnMetadata)?.name || propertyKey;
+    const columnMeta = columns[propertyKey] as ColumnMetadata;
+    
+    if (!columnMeta) {
+      throw new Error(`Property ${propertyKey} is not decorated with @Column`);
+    }
+    
+    const columnName = columnMeta.name;
 
     const existingFk = tableInfo.foreignKeys.find(
       fk =>
@@ -674,8 +690,13 @@ export function generateAlterTableSQL(
 
   // Check for missing vector columns
   for (const [propertyKey, dimensions] of Object.entries(vectorColumns)) {
-    const columnName =
-      (columns[propertyKey] as ColumnMetadata)?.name || propertyKey;
+    const columnMeta = columns[propertyKey] as ColumnMetadata;
+    
+    if (!columnMeta) {
+      throw new Error(`Property ${propertyKey} is not decorated with @Column`);
+    }
+    
+    const columnName = columnMeta.name;
 
     const existingColumn = tableInfo.columns.find(
       col => col.column_name === columnName
@@ -708,8 +729,13 @@ export function generateForeignKeySQL(
   // Add foreign key constraints
   for (const [propertyKey, fkMetadata] of Object.entries(foreignKeys)) {
     const metadata = fkMetadata as ForeignKeyMetadata;
-    const columnName =
-      (columns[propertyKey] as ColumnMetadata)?.name || propertyKey;
+    const columnMeta = columns[propertyKey] as ColumnMetadata;
+    
+    if (!columnMeta) {
+      throw new Error(`Property ${propertyKey} is not decorated with @Column`);
+    }
+    
+    const columnName = columnMeta.name;
     const constraintName = `fk_${tableName}_${columnName}`;
 
     // Check if the constraint already exists in the current schema
