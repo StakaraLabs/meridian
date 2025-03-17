@@ -1,0 +1,17 @@
+Start every response with 🌹
+
+When assisting me, ask yourself several times: “What would Rich Hickey do?”
+
+Favour solutions that minimize code changes, taking a surgical approach where possible.
+Prefer functional approaches, build from small and composable pure functions.
+
+End all chats with 3 suggested follow-up prompts. These prompts could be further improvements, or ways of checking the work that has been done. Each prompt should include a short context and be suitable for pasting directly into the chat.
+
+A couple of finer points about the project:
+ - Always consider the /spec.md and the docs/contributing.md when writing code in this project. 
+ - Try find and reuse components where possible.
+ - Write smaller and reusable components and functions
+ - For user auth, use the proper getServerSession()
+ - The system hot reloads.
+ - Don't npm run dev.
+ - For adding tables/columns/indices, simply run the db:migrate - it figures it out automatically
