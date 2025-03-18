@@ -18,13 +18,15 @@ yarn add meridian-sql
 - **Connection Pooling**: Efficient database connection management
 - **Transaction Support**: Simple transaction handling with automatic rollback
 - **Automatic Migrations**: Schema migrations based on entity definitions
+- **Named Parameters**: Support for named parameters in raw SQL queries
 
 ## Quick Start
 
 ```typescript
 import 'reflect-metadata';
 import { initializePool, getPool } from 'meridian-sql';
-import { findById, findAll, save, remove } from 'meridian-sql/operations';
+import { findBy, listAll, save, deleteBy, query } from 'meridian-sql/operations';
+import { withTransaction, withSavepoint } from 'meridian-sql/transaction';
 import { Table, Column } from 'meridian-sql/sql/decorators';
 import { BaseEntity } from 'meridian-sql/sql/base-entity';
 
@@ -66,25 +68,53 @@ const newUser = new User({
   email: 'john@example.com',
   displayName: 'John Doe'
 });
-await save(pool, newUser);
+await save(newUser, pool);
 
 // Find a user by ID
-const user = await findById(pool, User, newUser.id);
+const user = await findBy(User, { id: newUser.id }, pool);
 
 // Find all users
-const users = await findAll(pool, User);
+const users = await listAll(User, {}, pool);
 
 // Update a user
 if (user) {
   user.email = 'new-email@example.com';
-  await save(pool, user);
+  await save(user, pool);
 }
 
 // Delete a user
 if (user) {
-  await remove(pool, user);
+  await deleteBy(User, { id: user.id }, pool);
 }
 
+// Raw query with named parameters
+const activeUsers = await query(
+  'SELECT * FROM users WHERE is_active = :active AND created_at > :date',
+  { active: true, date: new Date('2023-01-01') },
+  pool
+);
+
+// Using transactions
+await withTransaction(async (client) => {
+  // Operations inside a transaction
+  const user = await findBy(User, { username: 'johndoe' }, client);
+  
+  if (user) {
+    // Update user within the transaction
+    user.email = 'updated@example.com';
+    await save(user, client);
+    
+    // Create related records in the same transaction
+    const profile = new Profile({
+      userId: user.id,
+      bio: 'A software developer'
+    });
+    await save(profile, client);
+  }
+  
+  // Transaction automatically commits when the callback completes
+  // If an error occurs, it automatically rolls back
+});
 ```
 
 ## Entity Definitions
@@ -139,6 +169,90 @@ Meridian provides base entity classes you can extend:
 
 - `BaseEntity`: Provides `id`, `createdAt`, `updatedAt`, and `deletedAt` fields
 - `UserOwnedEntity`: Extends `BaseEntity` and adds a `userId` field with foreign key
+
+## Raw Queries with Named Parameters
+
+Instead of a full-featured query builder, Meridian provides a simple way to execute raw SQL queries using named parameters:
+
+```typescript
+import { query } from 'meridian-sql/operations';
+
+// Use named parameters (prefixed with a colon)
+const users = await query(
+  'SELECT * FROM users WHERE username = :username OR email = :email',
+  { 
+    username: 'johndoe', 
+    email: 'john@example.com' 
+  },
+  pool
+);
+
+// The same parameter can be reused multiple times
+const stats = await query(
+  `SELECT 
+     COUNT(*) FILTER (WHERE user_id = :userId) AS user_post_count,
+     COUNT(*) FILTER (WHERE created_at > :date AND user_id = :userId) AS recent_posts
+   FROM posts`,
+  {
+    userId: '123',
+    date: new Date('2023-01-01')
+  },
+  pool
+);
+```
+
+The `query` function automatically converts named parameters to PostgreSQL's positional parameters, making your queries cleaner and less error-prone.
+
+## Transaction Support
+
+Meridian provides transaction support to ensure data consistency across multiple operations:
+
+```typescript
+import { withTransaction, withSavepoint } from 'meridian-sql/transaction';
+import { save, findBy, deleteBy } from 'meridian-sql/operations';
+
+// Basic transaction usage
+await withTransaction(async (client) => {
+  // All operations use the same client to be part of the transaction
+  const user = await findBy(User, { id: 'user123' }, client);
+  
+  // Update user
+  user.isActive = true;
+  await save(user, client);
+  
+  // Create related records
+  const post = new Post({ title: 'First Post', userId: user.id });
+  await save(post, client);
+  
+  // Any error will automatically rollback the entire transaction
+});
+
+// Nested transactions with savepoints
+await withTransaction(async (client) => {
+  // Main transaction operations
+  const user = await findBy(User, { id: 'user123' }, client);
+  
+  try {
+    // Create a savepoint for operations that might fail
+    await withSavepoint('create_post', async () => {
+      const post = new Post({
+        title: 'New Post',
+        userId: user.id
+      });
+      await save(post, client);
+      
+      // If this fails, only the savepoint is rolled back
+      await someRiskyOperation();
+    }, client);
+  } catch (error) {
+    console.log('Post creation failed, but transaction continues');
+  }
+  
+  // This operation will still be executed even if the savepoint was rolled back
+  user.lastSeenAt = new Date();
+  await save(user, client);
+});
+```
 
 ## Automatic Migrations
 

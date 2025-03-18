@@ -32,4 +32,4 @@ export {
 } from './migration';
 
 // Types
-export { EntityBase, ColumnMetadata, VectorEmbedding, pool } from './types';
+export { EntityBase, ColumnMetadata, VectorEmbedding, pool, initializePool } from './types';

@@ -2,83 +2,59 @@
 
 This document provides detailed information about the database operations API in Meridian.
 
-## Basic Operations
+## Entity Operations
 
-### `findById<T>(pool: Pool, entityClass: new () => T, id: string | number): Promise<T | null>`
+### `findBy<T>(entityClass: new () => T, criteria: Partial<T>, client?: PoolClient | Pool): Promise<T | null>`
 
-Finds an entity by its ID.
+Finds a single entity matching the given criteria.
 
 **Parameters:**
-- `pool`: Database connection pool
 - `entityClass`: Entity class to query
-- `id`: ID of the entity to find
+- `criteria`: Object with properties to match against
+- `client`: Optional database client (defaults to global pool)
 
 **Returns:**
 - Promise resolving to the entity or null if not found
 
 **Example:**
 ```typescript
-import { findById } from 'meridian-sql/operations';
+import { findBy } from 'meridian-sql/operations';
 import { User } from './entities/user';
 
-const user = await findById(pool, User, '123');
+const user = await findBy(User, { email: 'user@example.com' });
 ```
 
-### `findAll<T>(pool: Pool, entityClass: new () => T, options?: FindOptions): Promise<T[]>`
+### `listAll<T>(entityClass: new () => T, criteria?: Partial<T>, client?: PoolClient | Pool): Promise<T[]>`
 
-Finds all entities of a given type.
+Lists all entities matching the given criteria.
 
 **Parameters:**
-- `pool`: Database connection pool
 - `entityClass`: Entity class to query
-- `options` (optional): Query options
-  - `where`: WHERE conditions
-  - `orderBy`: ORDER BY clause
-  - `limit`: Maximum number of results
-  - `offset`: Number of results to skip
+- `criteria`: Object with properties to match against (optional)
+- `client`: Optional database client (defaults to global pool)
 
 **Returns:**
 - Promise resolving to an array of entities
 
 **Example:**
 ```typescript
-import { findAll } from 'meridian-sql/operations';
+import { listAll } from 'meridian-sql/operations';
 import { User } from './entities/user';
 
-const users = await findAll(pool, User, {
-  where: { isActive: true },
-  orderBy: { createdAt: 'DESC' },
-  limit: 10
-});
+// Get all active users
+const users = await listAll(User, { isActive: true });
+
+// Get all users
+const allUsers = await listAll(User);
 ```
 
-### `findOne<T>(pool: Pool, entityClass: new () => T, where: Partial<T>): Promise<T | null>`
-
-Finds a single entity matching the given criteria.
-
-**Parameters:**
-- `pool`: Database connection pool
-- `entityClass`: Entity class to query
-- `where`: WHERE conditions
-
-**Returns:**
-- Promise resolving to the entity or null if not found
-
-**Example:**
-```typescript
-import { findOne } from 'meridian-sql/operations';
-import { User } from './entities/user';
-
-const user = await findOne(pool, User, { email: 'user@example.com' });
-```
-
-### `save<T extends BaseEntity>(pool: Pool, entity: T): Promise<T>`
+### `save<T extends EntityBase>(entity: T, client?: PoolClient | Pool): Promise<T>`
 
 Saves an entity to the database (insert or update).
 
 **Parameters:**
-- `pool`: Database connection pool
 - `entity`: Entity to save
+- `client`: Optional database client (defaults to global pool)
 
 **Returns:**
 - Promise resolving to the saved entity
@@ -93,194 +69,179 @@ const user = new User({
   email: 'john@example.com'
 });
 
-const savedUser = await save(pool, user);
+const savedUser = await save(user);
 ```
 
-### `remove<T extends BaseEntity>(pool: Pool, entity: T): Promise<boolean>`
+### `deleteBy<T>(entityClass: new () => T, criteria: Partial<T>, client?: PoolClient | Pool): Promise<number>`
 
-Removes an entity from the database.
+Deletes entities matching the given criteria.
 
 **Parameters:**
-- `pool`: Database connection pool
-- `entity`: Entity to remove
+- `entityClass`: Entity class to delete from
+- `criteria`: Object with properties to match against
+- `client`: Optional database client (defaults to global pool)
 
 **Returns:**
-- Promise resolving to true if the entity was removed
+- Promise resolving to the number of deleted entities
 
 **Example:**
 ```typescript
-import { remove } from 'meridian-sql/operations';
+import { deleteBy } from 'meridian-sql/operations';
+import { User } from './entities/user';
 
-const success = await remove(pool, user);
+// Delete inactive users
+const deletedCount = await deleteBy(User, { isActive: false });
 ```
 
-## Transaction Operations
+## Raw Queries with Named Parameters
 
-### `beginTransaction(pool: Pool): Promise<PoolClient>`
+### `query<T = any>(sql: string, params: Record<string, any> = {}, client: PoolClient | Pool = pool): Promise<T[]>`
 
-Begins a new transaction.
+Executes a raw SQL query with named parameters.
 
 **Parameters:**
-- `pool`: Database connection pool
+- `sql`: SQL query string with named parameters (e.g., `:paramName`)
+- `params`: Object containing named parameter values
+- `client`: Optional database client for transaction support (defaults to the global pool)
 
 **Returns:**
-- Promise resolving to a client with an active transaction
+- Promise resolving to the query result rows
+
+**Details:**
+- Named parameters in the SQL string should be prefixed with a colon (`:`)
+- The function automatically converts named parameters to PostgreSQL's positional parameters
+- The same named parameter can be used multiple times in the query and will be properly mapped
 
 **Example:**
 ```typescript
-import { beginTransaction } from 'meridian-sql/operations';
+import { query } from 'meridian-sql/operations';
 
-const client = await beginTransaction(pool);
-try {
-  // Perform operations with client
-  await client.query('INSERT INTO users (name) VALUES ($1)', ['John']);
-  await client.query('COMMIT');
-} catch (error) {
-  await client.query('ROLLBACK');
-  throw error;
-} finally {
-  client.release();
+// Query with named parameters
+const users = await query(
+  `SELECT * FROM users WHERE username = :username OR email = :email`,
+  { 
+    username: 'johndoe', 
+    email: 'john@example.com' 
+  }
+);
+
+// Using the same parameter multiple times
+const count = await query(
+  `SELECT COUNT(*) FROM posts 
+   WHERE user_id = :userId 
+   AND created_at > :date 
+   AND (title LIKE '%' || :searchTerm || '%' OR content LIKE '%' || :searchTerm || '%')`,
+  {
+    userId: '123',
+    date: new Date('2023-01-01'),
+    searchTerm: 'important'
+  }
+);
+```
+
+## Utility Functions
+
+### `mapRowToEntity<T extends EntityBase>(row: any, entityClass: new () => T): Partial<T>`
+
+Maps a database row to an entity.
+
+**Parameters:**
+- `row`: Database row data
+- `entityClass`: Entity class to map to
+
+**Returns:**
+- Partial entity with properties populated from the row
+
+**Example:**
+```typescript
+import { mapRowToEntity } from 'meridian-sql/operations';
+import { User } from './entities/user';
+
+const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+if (rows.length > 0) {
+  const userData = mapRowToEntity(rows[0], User);
+  const user = new User(userData);
+  return user;
 }
+return null;
 ```
 
-### `withTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T>`
+## Transaction Support
 
-Executes a callback within a transaction.
+### `withTransaction<T>(callback: (client: PoolClient) => Promise<T>, existingClient?: PoolClient): Promise<T>`
+
+Executes a callback within a transaction. Automatically handles transaction begin/commit/rollback and client release.
 
 **Parameters:**
-- `pool`: Database connection pool
 - `callback`: Function to execute within the transaction
+- `existingClient`: Optional existing client to use (for nested transactions)
 
 **Returns:**
 - Promise resolving to the result of the callback
 
 **Example:**
 ```typescript
-import { withTransaction } from 'meridian-sql/operations';
+import { withTransaction } from 'meridian-sql/transaction';
+import { save, findBy } from 'meridian-sql/operations';
 
-const result = await withTransaction(pool, async (client) => {
-  const { rows: [user] } = await client.query(
-    'INSERT INTO users (name) VALUES ($1) RETURNING *',
-    ['John']
-  );
+const result = await withTransaction(async (client) => {
+  // Find user
+  const user = await findBy(User, { id: 'user-123' }, client);
   
-  await client.query(
-    'INSERT INTO profiles (user_id, bio) VALUES ($1, $2)',
-    [user.id, 'A new user']
-  );
+  // Create new post
+  const post = new Post({ 
+    title: 'New Post',
+    userId: user.id
+  });
+  await save(post, client);
   
-  return user;
+  // Create comment
+  const comment = new Comment({
+    content: 'First comment!',
+    postId: post.id,
+    userId: user.id
+  });
+  await save(comment, client);
+  
+  return { post, comment };
 });
 ```
 
-## Batch Operations
+### `withSavepoint<T>(name: string, callback: () => Promise<T>, client: PoolClient): Promise<T>`
 
-### `saveMany<T extends BaseEntity>(pool: Pool, entities: T[]): Promise<T[]>`
-
-Saves multiple entities in a single transaction.
+Executes a callback within a savepoint in a transaction. Useful for partial rollbacks.
 
 **Parameters:**
-- `pool`: Database connection pool
-- `entities`: Array of entities to save
+- `name`: Savepoint name
+- `callback`: Function to execute within the savepoint
+- `client`: Transaction client
 
 **Returns:**
-- Promise resolving to the array of saved entities
+- Promise resolving to the result of the callback
 
 **Example:**
 ```typescript
-import { saveMany } from 'meridian-sql/operations';
-import { User } from './entities/user';
+import { withTransaction } from 'meridian-sql/transaction';
+import { withSavepoint } from 'meridian-sql/transaction';
+import { save } from 'meridian-sql/operations';
 
-const users = [
-  new User({ username: 'user1', email: 'user1@example.com' }),
-  new User({ username: 'user2', email: 'user2@example.com' })
-];
-
-const savedUsers = await saveMany(pool, users);
-```
-
-### `removeMany<T extends BaseEntity>(pool: Pool, entities: T[]): Promise<boolean>`
-
-Removes multiple entities in a single transaction.
-
-**Parameters:**
-- `pool`: Database connection pool
-- `entities`: Array of entities to remove
-
-**Returns:**
-- Promise resolving to true if all entities were removed
-
-**Example:**
-```typescript
-import { removeMany } from 'meridian-sql/operations';
-
-const success = await removeMany(pool, [user1, user2, user3]);
-```
-
-## Query Building
-
-### `buildSelectQuery<T>(entityClass: new () => T, options?: FindOptions): { text: string, values: any[] }`
-
-Builds a SELECT query for an entity class.
-
-**Parameters:**
-- `entityClass`: Entity class to query
-- `options` (optional): Query options
-
-**Returns:**
-- Object with query text and parameter values
-
-**Example:**
-```typescript
-import { buildSelectQuery } from 'meridian-sql/operations';
-import { User } from './entities/user';
-
-const query = buildSelectQuery(User, {
-  where: { isActive: true },
-  orderBy: { createdAt: 'DESC' },
-  limit: 10
+await withTransaction(async (client) => {
+  // Main transaction operations
+  const user = await findBy(User, { id: 'user-123' }, client);
+  
+  // Create post in a savepoint
+  try {
+    await withSavepoint('create_post', async () => {
+      const post = new Post({
+        title: 'New Post',
+        userId: user.id
+      });
+      await save(post, client);
+    }, client);
+  } catch (error) {
+    console.error('Post creation failed, but transaction continues');
+  }
+  
+  // Continue with other operations
 });
-
-const { rows } = await pool.query(query.text, query.values);
-```
-
-### `buildInsertQuery<T>(entity: T): { text: string, values: any[] }`
-
-Builds an INSERT query for an entity.
-
-**Parameters:**
-- `entity`: Entity to insert
-
-**Returns:**
-- Object with query text and parameter values
-
-**Example:**
-```typescript
-import { buildInsertQuery } from 'meridian-sql/operations';
-import { User } from './entities/user';
-
-const user = new User({ username: 'johndoe', email: 'john@example.com' });
-const query = buildInsertQuery(user);
-
-const { rows } = await pool.query(query.text, query.values);
-```
-
-### `buildUpdateQuery<T>(entity: T): { text: string, values: any[] }`
-
-Builds an UPDATE query for an entity.
-
-**Parameters:**
-- `entity`: Entity to update
-
-**Returns:**
-- Object with query text and parameter values
-
-**Example:**
-```typescript
-import { buildUpdateQuery } from 'meridian-sql/operations';
-
-user.email = 'newemail@example.com';
-const query = buildUpdateQuery(user);
-
-const { rows } = await pool.query(query.text, query.values);
 ``` 
